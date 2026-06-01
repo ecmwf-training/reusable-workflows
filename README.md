@@ -57,15 +57,22 @@ on:
         type: string
         default: ""
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   notebook-qa:
     uses: ecmwf-training/reusable-workflows/.github/workflows/notebook-qa.yml@main
     with:
       notebooks: ${{ inputs.notebooks || '' }}
+      pr_comment_summary: true
     secrets: inherit
 ```
 
 This sets up automated checks on new pull requests and merges/pushes into `develop` branch. It also allows manual Action runs in the GitHub Actions UI.
+
+The workflow writes the automated review table to the GitHub Actions job summary and, by default, updates a single managed comment on pull requests. Set `pr_comment_summary: false` to disable PR comments. The caller workflow must grant `pull-requests: write` for PR comments to work; reusable workflows cannot elevate the caller's `GITHUB_TOKEN` permissions. Pull requests from forks may still receive read-only tokens depending on the target repository settings.
 
 
 #### Configuration

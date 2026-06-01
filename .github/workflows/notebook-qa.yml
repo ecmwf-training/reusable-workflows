@@ -38,6 +38,11 @@ on:
         required: false
         type: string
         default: "notebook-qa,automated"
+      pr_comment_summary:
+        description: "Post the automated review summary as a pull request comment"
+        required: false
+        type: boolean
+        default: true
     secrets:
       JIRA_BASE_URL:
         required: false
@@ -423,6 +428,7 @@ jobs:
     if: always()
     steps:
       - name: Write automated review summary
+        id: review_summary
         env:
           LINT_JOB_RESULT: ${{ needs.lint.result }}
           EXECUTE_JOB_RESULT: ${{ needs.execute.result }}
@@ -439,6 +445,8 @@ jobs:
           CHANGELOG_RESULT: ${{ needs.lint.outputs.changelog_result }}
           EXECUTE_RESULT: ${{ needs.execute.outputs.execute_result }}
         run: |
+          summary_file="${RUNNER_TEMP:-/tmp}/notebook-qa-summary.md"
+
           format_status() {
             case "$1" in
               success) echo "Pass" ;;
@@ -497,7 +505,7 @@ jobs:
           }
 
           append_row() {
-            printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$@" >> "$GITHUB_STEP_SUMMARY"
+            printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$@" >> "$summary_file"
           }
 
           links_status=$(check_status "$LINK_RESULT" "$LINT_JOB_RESULT")
@@ -516,7 +524,7 @@ jobs:
             echo
             echo "| Category | Requirement | Criterion | Ref no.<br>(to be deleted) | Automated Result<br>(to be copied from GH Actions) | Final Verdict from QTO | Note from QTO (if any)<br>e.g., details why final verdict is different: overwritten / not necessary / fail is acceptable |"
             echo "| --- | --- | --- | --- | --- | --- | --- |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } > "$summary_file"
 
           append_row "1. Learning Resource Management" "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable." "All links in the learning resource must work." "1.2.3" "$links_status" "" ""
           append_row "1. Learning Resource Management" "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable." "All licences applicable to the learning resource must be provided." "1.2.4" "$license_status" "" ""
@@ -538,6 +546,66 @@ jobs:
           append_row "4. Documentation" "Scientific Basis and Value<br>Documentation on the scientific basis and value of the learning resource must be available." "All figures, tables, and datasets must be accompanied by appropriate attribution and explanations." "4.1.2" "N/A" "" ""
           append_row "4. Documentation" "Quality Control<br>Quality control and validation activities must be fully documented." "A record of all revisions and updates must be available in the documentation." "4.2.3" "$changelog_status" "" ""
           append_row "5. Fitness for Purpose and Scientific Soundness" "In expert reviews only" "N/A" "N/A" "N/A" "N/A" "N/A"
+
+          cat "$summary_file" >> "$GITHUB_STEP_SUMMARY"
+          echo "summary_file=$summary_file" >> "$GITHUB_OUTPUT"
+
+      - name: Post automated review summary comment
+        if: >-
+          always() &&
+          inputs.pr_comment_summary == true &&
+          github.event.pull_request.number != '' &&
+          steps.review_summary.outputs.summary_file != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SUMMARY_FILE: ${{ steps.review_summary.outputs.summary_file }}
+        run: |
+          comment_marker="<!-- notebook-qa-summary-comment -->"
+          comments_url="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
+          comment_file="${RUNNER_TEMP:-/tmp}/notebook-qa-summary-comment.md"
+          payload_file="${RUNNER_TEMP:-/tmp}/notebook-qa-comment-payload.json"
+
+          {
+            echo "$comment_marker"
+            echo
+            cat "$SUMMARY_FILE"
+            echo
+            echo "_Updated by [workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})._"
+          } > "$comment_file"
+
+          set -o pipefail
+          if ! existing_comment_id=$(gh api "$comments_url" \
+            --paginate \
+            --jq '.[] | select((.body // "") | contains("<!-- notebook-qa-summary-comment -->")) | .id' \
+            | sed -n '1p'); then
+            echo "::warning::Unable to list pull request comments. Grant pull-requests: write to the reusable workflow caller to enable QA summary comments."
+            exit 0
+          fi
+
+          python3 - "$comment_file" "$payload_file" << 'EOF'
+          import json
+          import sys
+
+          comment_path, payload_path = sys.argv[1], sys.argv[2]
+          with open(comment_path, encoding="utf-8") as comment_file:
+              body = comment_file.read()
+
+          with open(payload_path, "w", encoding="utf-8") as payload_file:
+              json.dump({"body": body}, payload_file)
+          EOF
+
+          if [ -n "$existing_comment_id" ]; then
+            if gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_comment_id}" --input "$payload_file" > /dev/null; then
+              echo "Updated pull request QA summary comment."
+            else
+              echo "::warning::Unable to update pull request QA summary comment."
+            fi
+          elif gh api --method POST "$comments_url" --input "$payload_file" > /dev/null; then
+            echo "Created pull request QA summary comment."
+          else
+            echo "::warning::Unable to create pull request QA summary comment."
+          fi
 
   # Job 4: Create Jira ticket on failure (optional)
   notify-failure:
