@@ -215,21 +215,34 @@ jobs:
           fail: true
 
       # Test coverage (direct pytest-cov)
+      - name: Detect test files
+        id: test_files
+        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
+        run: |
+          shopt -s nullglob
+          test_files=(test_*.py *_test.py tests/*.py)
+          if [ "${#test_files[@]}" -gt 0 ]; then
+            echo "has_tests=true" >> "$GITHUB_OUTPUT"
+            echo "Test files:"
+            printf '  %s\n' "${test_files[@]}"
+          else
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
+            echo "No test files found"
+          fi
+
       - name: (2.3.1, 2.3.2) Check tests and coverage
         id: test_checker
-        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
+        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true' && (steps.test_files.outputs.has_tests == 'true' || steps.config.outputs.require_tests == 'true')
         env:
-          REQUIRE_TESTS: ${{ steps.config.outputs.require_tests }}
+          HAS_TESTS: ${{ steps.test_files.outputs.has_tests }}
           COVERAGE_THRESHOLD: ${{ steps.config.outputs.coverage_threshold }}
         run: |
-          if ls test_*.py *_test.py tests/*.py 2>/dev/null; then
+          if [ "$HAS_TESTS" = "true" ]; then
             pytest --cov=. --cov-report=term --cov-fail-under="$COVERAGE_THRESHOLD"
           else
             echo "::warning::No test files found"
-            if [ "$REQUIRE_TESTS" = "true" ]; then
-              echo "Tests are required by configuration (require_tests: true)"
-              exit 1
-            fi
+            echo "Tests are required by configuration (require_tests: true)"
+            exit 1
           fi
 
       # Custom checks

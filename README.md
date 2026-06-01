@@ -21,7 +21,7 @@ This workflow implements QA automation for Jupyter Notebooks. The checks below r
 
 **Version metadata** (`metadata`) — Looks for `**Last updated:** YYYY-MM-DD` (e.g. `**Last updated:** 2025-01-15`) in the first markdown cell(s) before any code cell. Falls back to a `README.md` in the same directory if not found in the notebook.
 
-**Tests & coverage** (`tests`) — If test files exist (`test_*.py`, `*_test.py`, `tests/*.py`), runs `pytest` with coverage. Coverage must meet the configured threshold (default 80%). When no test files exist the check passes by default, unless `require_tests: true` is set in the config.
+**Tests & coverage** (`tests`) — If test files exist (`test_*.py`, `*_test.py`, `tests/*.py`), runs `pytest` with coverage. Coverage must meet the configured threshold (default 80%). When no test files exist the check is skipped by default, unless `require_tests: true` is set in the config.
 
 **Accessibility** (`accessibility`) — Runs WCAG compliance checks on notebooks using `jupyterlab-a11y-checker`.
 
