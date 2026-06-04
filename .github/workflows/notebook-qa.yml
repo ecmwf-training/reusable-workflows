@@ -112,7 +112,6 @@ jobs:
       formatter_result: ${{ steps.formatter.outcome }}
       pynblint_result: ${{ steps.pynblint.outcome }}
       link_result: ${{ steps.link_checker.outcome }}
-      test_result: ${{ steps.test_checker.outcome }}
       figure_result: ${{ steps.figure_checker.outcome }}
       metadata_result: ${{ steps.metadata_checker.outcome }}
       data_source_result: ${{ steps.data_source_checker.outcome }}
@@ -147,7 +146,7 @@ jobs:
           ALL_NOTEBOOKS: ${{ needs.collect.outputs.notebooks }}
         run: |
           python .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_gha_config.py \
-            --checks linter formatter pynblint links tests figures metadata data_source accessibility license changelog \
+            --checks linter formatter pynblint links figures metadata data_source accessibility license changelog \
             --config .github/notebook-qa.yml \
             --extras
 
@@ -213,37 +212,6 @@ jobs:
         with:
           args: --verbose --no-progress ${{ steps.config.outputs.notebooks_links }}
           fail: true
-
-      # Test coverage (direct pytest-cov)
-      - name: Detect test files
-        id: test_files
-        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
-        run: |
-          shopt -s nullglob
-          test_files=(test_*.py *_test.py tests/*.py)
-          if [ "${#test_files[@]}" -gt 0 ]; then
-            echo "has_tests=true" >> "$GITHUB_OUTPUT"
-            echo "Test files:"
-            printf '  %s\n' "${test_files[@]}"
-          else
-            echo "has_tests=false" >> "$GITHUB_OUTPUT"
-            echo "No test files found"
-          fi
-
-      - name: (2.3.1, 2.3.2) Check tests and coverage
-        id: test_checker
-        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true' && (steps.test_files.outputs.has_tests == 'true' || steps.config.outputs.require_tests == 'true')
-        env:
-          HAS_TESTS: ${{ steps.test_files.outputs.has_tests }}
-          COVERAGE_THRESHOLD: ${{ steps.config.outputs.coverage_threshold }}
-        run: |
-          if [ "$HAS_TESTS" = "true" ]; then
-            pytest --cov=. --cov-report=term --cov-fail-under="$COVERAGE_THRESHOLD"
-          else
-            echo "::warning::No test files found"
-            echo "Tests are required by configuration (require_tests: true)"
-            exit 1
-          fi
 
       # Custom checks
       - name: (3.3.2) Check figure labels and sources
@@ -336,15 +304,24 @@ jobs:
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
-      # Load QA config to check if execute is disabled
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+
+      - name: Install QA tools
+        working-directory: .tmp/${{ github.run_id }}-qa-tools
+        run: uv sync --frozen --no-install-project
+
+      # Load QA config to check if execute is disabled and to validate performance thresholds
       - name: Load QA config
         id: config
         env:
           ALL_NOTEBOOKS: ${{ needs.collect.outputs.notebooks }}
         run: |
-          python3 .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_gha_config.py \
+          .tmp/${{ github.run_id }}-qa-tools/.venv/bin/python \
+            .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_gha_config.py \
             --checks execute \
-            --config .github/notebook-qa.yml
+            --config .github/notebook-qa.yml \
+            --performance-tests
 
       - name: Skip execution check
         if: steps.config.outputs.skip_execute == 'true' || steps.config.outputs.notebooks_execute == ''
@@ -361,7 +338,7 @@ jobs:
 
       - name: Install execution tools
         if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != ''
-        run: pip install ploomber-engine psutil matplotlib pyyaml
+        run: pip install ploomber-engine psutil matplotlib
 
       - name: Configure CDS API
         if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != '' && env.CDSAPI_KEY != ''
@@ -369,68 +346,26 @@ jobs:
           echo "url: https://cds.climate.copernicus.eu/api" > ~/.cdsapirc
           echo "key: $CDSAPI_KEY" >> ~/.cdsapirc
 
-      - name: (2.2.1, 2.2.4, 2.2.6) Execute notebooks with memory profiling
+      - name: (2.2.1, 2.2.4, 2.2.6, 2.3.1, 2.3.2) Execute notebooks and check performance
         id: execute_notebooks
         if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != ''
         env:
           NOTEBOOKS_EXECUTE: ${{ steps.config.outputs.notebooks_execute }}
+          MAX_CELL_MEMORY_MB_WARNING: ${{ steps.config.outputs.max_cell_memory_mb_warning }}
+          MAX_CELL_MEMORY_MB_FAIL: ${{ steps.config.outputs.max_cell_memory_mb_fail }}
+          MAX_CELL_RUNTIME_SECONDS_WARNING: ${{ steps.config.outputs.max_cell_runtime_seconds_warning }}
+          MAX_CELL_RUNTIME_SECONDS_FAIL: ${{ steps.config.outputs.max_cell_runtime_seconds_fail }}
         run: |
-          python << 'EOF'
-          import os
-          import csv
-          from pathlib import Path
-          from ploomber_engine import execute_notebook
-          from ploomber_engine.profiling import get_profiling_data
+          mapfile -t nbs <<< "$NOTEBOOKS_EXECUTE"
+          python .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/execute_notebooks.py \
+            --output-dir "$QA_OUTPUT_DIR" \
+            "${nbs[@]}"
 
-          notebooks = [nb for nb in os.environ['NOTEBOOKS_EXECUTE'].splitlines() if nb.strip()]
-          output_dir = os.environ.get('QA_OUTPUT_DIR', 'qa_outputs')
-          Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-          failed = []
-          for nb in notebooks:
-              if not nb.strip():
-                  continue
-              print(f"\n{'='*60}")
-              print(f"Executing: {nb}")
-              print('='*60)
-              try:
-                  result = execute_notebook(
-                      nb,
-                      output_path=nb,
-                      profile_memory=True,
-                      progress_bar=False
-                  )
-                  # Save profiling data from cell metadata
-                  data = get_profiling_data(result)
-                  if data.get('memory') or data.get('runtime'):
-                      csv_path = Path(output_dir) / f"{Path(nb).stem}-profiling-data.csv"
-                      with open(csv_path, 'w', newline='') as f:
-                          writer = csv.DictWriter(f, fieldnames=['cell', 'memory', 'runtime'])
-                          writer.writeheader()
-                          for i, (mem, time) in enumerate(zip(
-                              data.get('memory', []),
-                              data.get('runtime', [])
-                          )):
-                              writer.writerow({'cell': i, 'memory': mem, 'runtime': time})
-                  else:
-                      print(f"::warning::No profiling data returned for {nb}")
-                  print(f"✅ {nb} executed successfully")
-              except Exception as e:
-                  print(f"❌ {nb} failed: {e}")
-                  failed.append(nb)
-
-          if failed:
-              print(f"\n❌ {len(failed)} notebook(s) failed to execute:")
-              for nb in failed:
-                  print(f"  - {nb}")
-              exit(1)
-          EOF
-
-      - name: Upload profiling artifacts
+      - name: Upload performance artifacts
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: notebook-profiling-${{ github.run_id }}
+          name: notebook-performance-${{ github.run_id }}
           path: ${{ env.QA_OUTPUT_DIR }}
           if-no-files-found: ignore
 
@@ -643,7 +578,6 @@ jobs:
           LINT_FORMATTER: ${{ needs.lint.outputs.formatter_result }}
           LINT_PYNBLINT: ${{ needs.lint.outputs.pynblint_result }}
           LINT_LINKS: ${{ needs.lint.outputs.link_result }}
-          LINT_TESTS: ${{ needs.lint.outputs.test_result }}
           LINT_FIGURES: ${{ needs.lint.outputs.figure_result }}
           LINT_METADATA: ${{ needs.lint.outputs.metadata_result }}
           LINT_A11Y: ${{ needs.lint.outputs.accessibility_result }}
@@ -660,7 +594,6 @@ jobs:
           [ "$LINT_FORMATTER" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Formatter (ruff format)\n"
           [ "$LINT_PYNBLINT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Pynblint\n"
           [ "$LINT_LINKS" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Link checker\n"
-          [ "$LINT_TESTS" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Tests/coverage\n"
           [ "$LINT_FIGURES" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Figure labels/sources\n"
           [ "$LINT_METADATA" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Version metadata\n"
           [ "$LINT_A11Y" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Accessibility\n"
@@ -668,7 +601,7 @@ jobs:
           [ "$LINT_CHANGELOG" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- CHANGELOG\n"
 
           # Execute job
-          [ "$EXEC_RESULT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Notebook execution\n"
+          [ "$EXEC_RESULT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Notebook execution/performance tests\n"
 
           echo "failed_checks<<EOF" >> $GITHUB_OUTPUT
           echo -e "$FAILED_CHECKS" >> $GITHUB_OUTPUT

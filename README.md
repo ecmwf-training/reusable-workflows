@@ -17,11 +17,9 @@ This workflow implements QA automation for Jupyter Notebooks. The checks below r
 
 **Link availability** (`links`) — Runs `lychee` against all notebooks. Every URL in markdown and code cells must be reachable.
 
-**Notebook execution** (`execute`) — Executes each notebook end-to-end with `ploomber-engine`. The notebook must run without errors. Memory usage and runtime are profiled per cell and uploaded as an artifact.
+**Notebook execution** (`execute`) — Executes each notebook end-to-end with `ploomber-engine`. The notebook must run without errors. Memory usage and runtime are profiled per cell, checked against performance-test thresholds, summarized in GitHub Actions, and uploaded as artifacts.
 
 **Version metadata** (`metadata`) — Looks for `**Last updated:** YYYY-MM-DD` (e.g. `**Last updated:** 2025-01-15`) in the first markdown cell(s) before any code cell. Falls back to a `README.md` in the same directory if not found in the notebook.
-
-**Tests & coverage** (`tests`) — If test files exist (`test_*.py`, `*_test.py`, `tests/*.py`), runs `pytest` with coverage. Coverage must meet the configured threshold (default 80%). When no test files exist the check is skipped by default, unless `require_tests: true` is set in the config.
 
 **Accessibility** (`accessibility`) — Runs WCAG compliance checks on notebooks using `jupyterlab-a11y-checker`.
 
@@ -97,9 +95,13 @@ notebooks:
     skip:
       - figures
 
-# Test configuration
-require_tests: false     # Set true to fail when no test files exist
-coverage_threshold: 80   # Minimum coverage percentage for pytest-cov
+# Performance-test thresholds used during notebook execution.
+# Defaults are strict for learner-suitable notebooks. Set any value to null to disable it.
+performance_tests:
+  max_cell_memory_mb_warning: 512
+  max_cell_memory_mb_fail: 1024
+  max_cell_runtime_seconds_warning: 60
+  max_cell_runtime_seconds_fail: 180
 
 # Pynblint rule configuration
 pynblint:
@@ -112,7 +114,7 @@ The baseline pynblint exclusion list suppresses `missing-h1-MD-heading` (MyST no
 
 Available pynblint rule slugs: `non-linear-execution`, `notebook-too-long`, `untitled-notebook`, `non-portable-chars-in-nb-name`, `notebook-name-too-long`, `imports-beyond-first-cell`, `missing-h1-MD-heading`, `missing-opening-MD-text`, `missing-closing-MD-text`, `too-few-MD-cells`, `duplicate-notebook-not-renamed`, `invalid-python-syntax`, `non-executed-notebook`, `non-executed-cells`, `empty-cells`, `long-multiline-python-comment`, `cell-too-long`
 
-Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `tests`, `figures`, `metadata`, `accessibility`, `license`, `changelog`, `execute`
+Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `figures`, `metadata`, `accessibility`, `license`, `changelog`, `execute`
 
 
 #### QA criteria reference
@@ -126,8 +128,8 @@ Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `tests`, `figures`,
 | 2.2.3 | Code style                | ruff, pynblint         |
 | 2.2.4 | Execution profiling       | ploomber-engine        |
 | 2.2.6 | Memory profiling          | ploomber-engine        |
-| 2.3.1 | Test existence            | pytest                 |
-| 2.3.2 | Coverage threshold        | pytest-cov             |
+| 2.3.1 | Performance tests available | ploomber-engine profiling |
+| 2.3.2 | Performance tests coverage | resource threshold checks |
 | 3.1.3 | Accessibility             | jupyterlab-a11y-checker|
 | 3.3.2 | Figure attribution        | figure_checker.py      |
 | 4.2.3 | Changelog                 | CHANGELOG.md existence |
