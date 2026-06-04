@@ -107,7 +107,6 @@ jobs:
       formatter_result: ${{ steps.formatter.outcome }}
       pynblint_result: ${{ steps.pynblint.outcome }}
       link_result: ${{ steps.link_checker.outcome }}
-      test_result: ${{ steps.test_checker.outcome }}
       figure_result: ${{ steps.figure_checker.outcome }}
       metadata_result: ${{ steps.metadata_checker.outcome }}
       accessibility_result: ${{ steps.accessibility_checker.outcome }}
@@ -141,7 +140,7 @@ jobs:
           ALL_NOTEBOOKS: ${{ needs.collect.outputs.notebooks }}
         run: |
           python .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_gha_config.py \
-            --checks linter formatter pynblint links tests figures metadata data_source accessibility license changelog \
+            --checks linter formatter pynblint links figures metadata data_source accessibility license changelog \
             --config .github/notebook-qa.yml \
             --extras
 
@@ -207,24 +206,6 @@ jobs:
         with:
           args: --verbose --no-progress ${{ steps.config.outputs.notebooks_links }}
           fail: true
-
-      # Test coverage (direct pytest-cov)
-      - name: (2.3.1, 2.3.2) Check tests and coverage
-        id: test_checker
-        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
-        env:
-          REQUIRE_TESTS: ${{ steps.config.outputs.require_tests }}
-          COVERAGE_THRESHOLD: ${{ steps.config.outputs.coverage_threshold }}
-        run: |
-          if ls test_*.py *_test.py tests/*.py 2>/dev/null; then
-            pytest --cov=. --cov-report=term --cov-fail-under="$COVERAGE_THRESHOLD"
-          else
-            echo "::warning::No test files found"
-            if [ "$REQUIRE_TESTS" = "true" ]; then
-              echo "Tests are required by configuration (require_tests: true)"
-              exit 1
-            fi
-          fi
 
       # Custom checks
       - name: (3.3.2) Check figure labels and sources
@@ -455,7 +436,6 @@ jobs:
           [ "$LINT_FORMATTER" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Formatter (ruff format)\n"
           [ "$LINT_PYNBLINT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Pynblint\n"
           [ "$LINT_LINKS" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Link checker\n"
-          [ "$LINT_TESTS" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Tests/coverage\n"
           [ "$LINT_FIGURES" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Figure labels/sources\n"
           [ "$LINT_METADATA" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Version metadata\n"
           [ "$LINT_A11Y" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Accessibility\n"
@@ -463,7 +443,7 @@ jobs:
           [ "$LINT_CHANGELOG" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- CHANGELOG\n"
 
           # Execute job
-          [ "$EXEC_RESULT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Notebook execution\n"
+          [ "$EXEC_RESULT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Notebook execution/performance tests\n"
 
           echo "failed_checks<<EOF" >> $GITHUB_OUTPUT
           echo -e "$FAILED_CHECKS" >> $GITHUB_OUTPUT
