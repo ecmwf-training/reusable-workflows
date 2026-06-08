@@ -23,6 +23,11 @@ on:
         required: false
         type: string
         default: "ecmwf-training/reusable-workflows"
+      qa_tools_ref:
+        description: "Branch, tag, or commit SHA to check out from qa_tools_repo (default: repository default branch)"
+        required: false
+        type: string
+        default: ""
       jira_create_ticket:
         description: "Create Jira ticket on failure (requires JIRA_* secrets)"
         required: false
@@ -127,6 +132,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ inputs.qa_tools_repo }}
+          ref: ${{ inputs.qa_tools_ref }}
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
@@ -301,6 +307,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ inputs.qa_tools_repo }}
+          ref: ${{ inputs.qa_tools_ref }}
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
