@@ -131,12 +131,14 @@ jobs:
       linter_error: ${{ steps.errors.outputs.linter_error }}
       formatter_error: ${{ steps.errors.outputs.formatter_error }}
       pynblint_error: ${{ steps.errors.outputs.pynblint_error }}
-      test_error: ${{ steps.errors.outputs.test_error }}
       figure_error: ${{ steps.errors.outputs.figure_error }}
       metadata_error: ${{ steps.errors.outputs.metadata_error }}
       data_source_error: ${{ steps.errors.outputs.data_source_error }}
       license_error: ${{ steps.errors.outputs.license_error }}
       changelog_error: ${{ steps.errors.outputs.changelog_error }}
+      link_error: ${{ steps.errors.outputs.link_error }}
+      test_error: ${{ steps.errors.outputs.test_error }}
+      accessibility_error: ${{ steps.errors.outputs.accessibility_error }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -178,7 +180,8 @@ jobs:
           NOTEBOOKS: ${{ steps.config.outputs.notebooks_linter }}
         run: |
           mapfile -t nbs <<< "$NOTEBOOKS"
-          ruff check "${nbs[@]}" 2>&1 | tee "$RUNNER_TEMP/qa_linter.log"
+          # Concise output: one readable line per violation so it survives capture into the summary table
+          ruff check --output-format=concise "${nbs[@]}" 2>&1 | tee "$RUNNER_TEMP/qa_linter.log"
 
       - name: (2.2.3) Run formatter
         id: formatter
@@ -233,9 +236,11 @@ jobs:
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --verbose --no-progress ${{ steps.config.outputs.notebooks_links }}
+          output: ${{ runner.temp }}/qa_links.md
+          format: markdown
           fail: true
 
-      # Test coverage (direct pytest-cov)
+      # Test coverage
       - name: Detect test files
         id: test_files
         if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
@@ -304,13 +309,15 @@ jobs:
             --config .github/notebook-qa.yml \
             "${nbs[@]}" 2>&1 | tee "$RUNNER_TEMP/qa_data_source.log"
 
-      # Accessibility check
+      # Accessibility check (run the published CLI directly so its output can be captured)
       - name: (3.1.3) Check accessibility
         id: accessibility_checker
         if: (success() || failure()) && steps.config.outputs.skip_accessibility != 'true' && steps.config.outputs.notebooks_accessibility != ''
-        uses: berkeley-dsep-infra/jupyterlab-a11y-checker@a5d17b99db5dfcc1500b69727a2726179eb82903
-        with:
-          files: ${{ steps.config.outputs.notebooks_accessibility }}
+        env:
+          NOTEBOOKS: ${{ steps.config.outputs.notebooks_accessibility }}
+        run: |
+          mapfile -t nbs <<< "$NOTEBOOKS"
+          npx --yes @jupyterlab-a11y-checker/cli@0.1.7 "${nbs[@]}" 2>&1 | tee "$RUNNER_TEMP/qa_accessibility.log"
 
       # File existence checks
       - name: (1.2.4) Check LICENSE
@@ -346,10 +353,12 @@ jobs:
           LINTER_OUTCOME: ${{ steps.linter.outcome }}
           FORMATTER_OUTCOME: ${{ steps.formatter.outcome }}
           PYNBLINT_OUTCOME: ${{ steps.pynblint.outcome }}
+          LINK_OUTCOME: ${{ steps.link_checker.outcome }}
           TEST_OUTCOME: ${{ steps.test_checker.outcome }}
           FIGURE_OUTCOME: ${{ steps.figure_checker.outcome }}
           METADATA_OUTCOME: ${{ steps.metadata_checker.outcome }}
           DATA_SOURCE_OUTCOME: ${{ steps.data_source_checker.outcome }}
+          ACCESSIBILITY_OUTCOME: ${{ steps.accessibility_checker.outcome }}
           LICENSE_OUTCOME: ${{ steps.license.outcome }}
           CHANGELOG_OUTCOME: ${{ steps.changelog.outcome }}
         run: |
@@ -372,8 +381,19 @@ jobs:
           emit figure_error "$FIGURE_OUTCOME" "$RUNNER_TEMP/qa_figure.log"
           emit metadata_error "$METADATA_OUTCOME" "$RUNNER_TEMP/qa_metadata.log"
           emit data_source_error "$DATA_SOURCE_OUTCOME" "$RUNNER_TEMP/qa_data_source.log"
+          emit accessibility_error "$ACCESSIBILITY_OUTCOME" "$RUNNER_TEMP/qa_accessibility.log"
           emit license_error "$LICENSE_OUTCOME" "$RUNNER_TEMP/qa_license.log"
           emit changelog_error "$CHANGELOG_OUTCOME" "$RUNNER_TEMP/qa_changelog.log"
+          # lychee is a third-party action: harvest its markdown report, keeping only the broken-link lines
+          if [ "$LINK_OUTCOME" = "failure" ] && [ -s "$RUNNER_TEMP/qa_links.md" ]; then
+            link_errors=$(grep -E 'https?://' "$RUNNER_TEMP/qa_links.md" | head -n 20 || true)
+            [ -n "$link_errors" ] || link_errors=$(tail -n 20 "$RUNNER_TEMP/qa_links.md")
+            {
+              echo "link_error<<__QA_ERR_EOF__"
+              printf '%s\n' "$link_errors" | sed -r 's/\x1b\[[0-9;]*[mGKH]//g'
+              echo "__QA_ERR_EOF__"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   # Job 2: Notebook execution (resource-intensive, configurable runner)
   execute:
@@ -553,15 +573,17 @@ jobs:
           ACCESSIBILITY_RESULT: ${{ needs.lint.outputs.accessibility_result }}
           CHANGELOG_RESULT: ${{ needs.lint.outputs.changelog_result }}
           EXECUTE_RESULT: ${{ needs.execute.outputs.execute_result }}
+          LINK_ERROR: ${{ needs.lint.outputs.link_error }}
           LINTER_ERROR: ${{ needs.lint.outputs.linter_error }}
           FORMATTER_ERROR: ${{ needs.lint.outputs.formatter_error }}
           PYNBLINT_ERROR: ${{ needs.lint.outputs.pynblint_error }}
-          TEST_ERROR: ${{ needs.lint.outputs.test_error }}
           FIGURE_ERROR: ${{ needs.lint.outputs.figure_error }}
           METADATA_ERROR: ${{ needs.lint.outputs.metadata_error }}
           DATA_SOURCE_ERROR: ${{ needs.lint.outputs.data_source_error }}
           LICENSE_ERROR: ${{ needs.lint.outputs.license_error }}
           CHANGELOG_ERROR: ${{ needs.lint.outputs.changelog_error }}
+          TEST_ERROR: ${{ needs.lint.outputs.test_error }}
+          ACCESSIBILITY_ERROR: ${{ needs.lint.outputs.accessibility_error }}
           EXECUTE_ERROR: ${{ needs.execute.outputs.execute_error }}
           SUMMARY_FILE: ${{ runner.temp }}/notebook-qa-summary.md
           SUMMARISE_ALL_CHECKS: ${{ inputs.summarise_all_checks }}
