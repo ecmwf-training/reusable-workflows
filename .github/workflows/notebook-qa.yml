@@ -43,6 +43,11 @@ on:
         required: false
         type: boolean
         default: true
+      summarise_all_checks:
+        description: "Include all checks in the summary table (default: only failed checks)"
+        required: false
+        type: boolean
+        default: false
     secrets:
       JIRA_BASE_URL:
         required: false
@@ -439,6 +444,13 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
+      - name: Checkout QA tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.qa_tools_repo }}
+          path: .tmp/${{ github.run_id }}-qa-tools
+          persist-credentials: false
+
       - name: Write automated review summary
         id: review_summary
         env:
@@ -456,111 +468,11 @@ jobs:
           ACCESSIBILITY_RESULT: ${{ needs.lint.outputs.accessibility_result }}
           CHANGELOG_RESULT: ${{ needs.lint.outputs.changelog_result }}
           EXECUTE_RESULT: ${{ needs.execute.outputs.execute_result }}
+          SUMMARY_FILE: ${{ runner.temp }}/notebook-qa-summary.md
+          SUMMARISE_ALL_CHECKS: ${{ inputs.summarise_all_checks }}
         run: |
-          summary_file="${RUNNER_TEMP:-/tmp}/notebook-qa-summary.md"
-
-          format_status() {
-            case "$1" in
-              success) echo "Pass" ;;
-              failure) echo "Fail" ;;
-              cancelled) echo "Cancelled" ;;
-              skipped) echo "Skipped" ;;
-              *) echo "N/A" ;;
-            esac
-          }
-
-          check_status() {
-            step_result="$1"
-            job_result="$2"
-
-            if [ -z "$step_result" ] && [ "$job_result" != "success" ]; then
-              step_result="$job_result"
-            fi
-
-            format_status "$step_result"
-          }
-
-          aggregate_status() {
-            has_success=false
-            has_skipped=false
-            has_cancelled=false
-
-            for result in "$@"; do
-              case "$result" in
-                failure)
-                  echo "Fail"
-                  return
-                  ;;
-                cancelled)
-                  has_cancelled=true
-                  ;;
-                success)
-                  has_success=true
-                  ;;
-                skipped)
-                  has_skipped=true
-                  ;;
-              esac
-            done
-
-            if [ "$has_cancelled" = "true" ]; then
-              echo "Cancelled"
-            elif [ "$has_success" = "true" ]; then
-              echo "Pass"
-            elif [ "$has_skipped" = "true" ]; then
-              echo "Skipped"
-            elif [ "$LINT_JOB_RESULT" != "success" ]; then
-              format_status "$LINT_JOB_RESULT"
-            else
-              echo "N/A"
-            fi
-          }
-
-          append_row() {
-            printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$@" >> "$summary_file"
-          }
-
-          links_status=$(check_status "$LINK_RESULT" "$LINT_JOB_RESULT")
-          license_status=$(check_status "$LICENSE_RESULT" "$LINT_JOB_RESULT")
-          metadata_status=$(check_status "$METADATA_RESULT" "$LINT_JOB_RESULT")
-          data_source_status=$(check_status "$DATA_SOURCE_RESULT" "$LINT_JOB_RESULT")
-          execute_status=$(check_status "$EXECUTE_RESULT" "$EXECUTE_JOB_RESULT")
-          code_style_status=$(aggregate_status "$LINTER_RESULT" "$FORMATTER_RESULT" "$PYNBLINT_RESULT")
-          tests_status=$(check_status "$TEST_RESULT" "$LINT_JOB_RESULT")
-          figure_status=$(check_status "$FIGURE_RESULT" "$LINT_JOB_RESULT")
-          accessibility_status=$(check_status "$ACCESSIBILITY_RESULT" "$LINT_JOB_RESULT")
-          changelog_status=$(check_status "$CHANGELOG_RESULT" "$LINT_JOB_RESULT")
-
-          {
-            echo "## AUTOMATED REVIEW"
-            echo
-            echo "| Category | Requirement | Criterion | Ref no.<br>(to be deleted) | Automated Result<br>(to be copied from GH Actions) | Final Verdict from QTO | Note from QTO (if any)<br>e.g., details why final verdict is different: overwritten / not necessary / fail is acceptable |"
-            echo "| --- | --- | --- | --- | --- | --- | --- |"
-          } > "$summary_file"
-
-          append_row "1. Learning Resource Management" "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable." "All links in the learning resource must work." "1.2.3" "$links_status" "" ""
-          append_row "1. Learning Resource Management" "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable." "All licences applicable to the learning resource must be provided." "1.2.4" "$license_status" "" ""
-          append_row "1. Learning Resource Management" "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable." "The date of the most recent version of the learning resource must be stated." "1.2.6" "$metadata_status" "" ""
-          append_row "1. Learning Resource Management" "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable." "The date of the most recent execution of the learning resource code must be stated." "1.2.7" "N/A" "" ""
-          append_row "1. Learning Resource Management" "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable." "All datasets used in the learning resource must be available." "1.2.8" "$data_source_status" "" ""
-          append_row "2. Technical Quality" "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly." "All code cells must be able to run sequentially without errors." "2.2.1" "$execute_status" "" ""
-          append_row "2. Technical Quality" "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly." "All Python code must adhere to the Black style." "2.2.3" "$code_style_status" "" ""
-          append_row "2. Technical Quality" "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly." "All installation/execute instructions must be functional across current devices and operating systems." "2.2.4" "$execute_status" "" ""
-          append_row "2. Technical Quality" "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly." "All installation/execute instructions must be functional across current internet browsers." "2.2.5" "N/A" "" ""
-          append_row "2. Technical Quality" "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly." "The learning resource must be functional using the supplied dependencies and/or environment." "2.3.1" "$execute_status" "" ""
-          append_row "2. Technical Quality" "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly." "All dependencies of the source code must be stable and reliable." "2.2.8" "N/A" "" ""
-          append_row "2. Technical Quality" "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly." "All dependencies of the source code must be regularly security checked." "2.2.7" "N/A" "" ""
-          append_row "2. Technical Quality" "Performance<br>The learning resource must be responsive." "The learning resource must come with a set of tests for evaluating its performance." "2.3.1" "$tests_status" "" ""
-          append_row "2. Technical Quality" "Performance<br>The learning resource must be responsive." "Performance tests must pass with X% coverage." "2.3.2" "$tests_status" "" ""
-          append_row "3. User Experience" "Accessibility<br>The learning resource must comply with accessibility standards." "Key text-based information must be compatible with text to audio software." "3.1.3" "$accessibility_status" "" ""
-          append_row "3. User Experience" "Interpretation<br>The learning resource must maintain scientific integrity." "Graphs and figures must be properly labelled and include source information." "3.3.2" "$figure_status" "" ""
-          append_row "4. Documentation" "Scientific Basis and Value<br>Documentation on the scientific basis and value of the learning resource must be available." "Underlying sources, datasets, and publications must be referenced." "4.1.1" "N/A" "" ""
-          append_row "4. Documentation" "Scientific Basis and Value<br>Documentation on the scientific basis and value of the learning resource must be available." "All figures, tables, and datasets must be accompanied by appropriate attribution and explanations." "4.1.2" "N/A" "" ""
-          append_row "4. Documentation" "Quality Control<br>Quality control and validation activities must be fully documented." "A record of all revisions and updates must be available in the documentation." "4.2.3" "$changelog_status" "" ""
-          append_row "5. Fitness for Purpose and Scientific Soundness" "In expert reviews only" "N/A" "N/A" "N/A" "N/A" "N/A"
-
-          cat "$summary_file" >> "$GITHUB_STEP_SUMMARY"
-          echo "summary_file=$summary_file" >> "$GITHUB_OUTPUT"
+          python3 .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_review_summary.py
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post automated review summary comment
         if: >-
