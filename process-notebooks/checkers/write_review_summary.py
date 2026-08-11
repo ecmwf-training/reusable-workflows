@@ -113,7 +113,7 @@ def main() -> int:
         "## AUTOMATED REVIEW",
         "",
         ( 
-            "The table below summarises the results of the automated checks performed on learning resource."
+            "The table below summarises the results of the automated checks performed on learning resource. "
             "It should be copied to the 'Automated Review' section of the review checklist. "
         ),
         (
