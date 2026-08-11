@@ -80,7 +80,7 @@ disabled_checks:
 
 # Notebooks to skip entirely (all checks), supports glob patterns
 skip_notebooks:
-  - "./draft.ipynb" # To skip notebooks at the top level include "./" to ensure that the path is resolved
+  - "draft.ipynb"
   - "notebooks/draft.ipynb"
   - "notebooks/experimental/**"
 
