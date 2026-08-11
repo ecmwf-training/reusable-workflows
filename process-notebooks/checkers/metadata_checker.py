@@ -74,9 +74,7 @@ def check_metadata(notebook_path: str) -> tuple[str, str | None]:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Check for Last updated metadata in Jupyter notebooks"
-    )
+    parser = argparse.ArgumentParser(description="Check for Last updated metadata in Jupyter notebooks")
     parser.add_argument("notebooks", nargs="*", help="Notebook files to check")
     parser.add_argument(
         "--config",
