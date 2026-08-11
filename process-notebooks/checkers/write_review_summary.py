@@ -50,10 +50,37 @@ def aggregate_status(results: list[str], lint_job_result: str) -> str:
     return "N/A"
 
 
-def append_row(rows: list[str], include_all: bool, *columns: str) -> None:
+def clean_error(text: str) -> str:
+    """Sanitise captured error output for inclusion in a markdown table cell."""
+    text = text.strip()
+    if not text:
+        return ""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("|", "\\|")
+    return text.replace("\n", "<br>")
+
+
+def result_cell(status: str, error: str) -> str:
+    """Render the Automated Result cell with a bold status and optional error detail."""
+    cell = f"**{status}**"
+    if status == "Fail" and error:
+        cell += "<br>" + error
+    return cell
+
+
+def append_row(
+    rows: list[str],
+    include_all: bool,
+    criterion: str,
+    ref: str,
+    status: str,
+    error: str = "",
+    comment: str = "",
+) -> None:
     """Record a table row, filtering to failures unless include_all is set."""
-    if include_all or columns[2] == "Fail":
-        rows.append("| " + " | ".join(columns) + " |")
+    if include_all or status == "Fail":
+        cells = [criterion, ref, result_cell(status, error), comment]
+        rows.append("| " + " | ".join(cells) + " |")
 
 
 def main() -> int:
@@ -80,6 +107,27 @@ def main() -> int:
     accessibility_status = check_status(env.get("ACCESSIBILITY_RESULT", ""), lint_job_result)
     changelog_status = check_status(env.get("CHANGELOG_RESULT", ""), lint_job_result)
 
+    links_error = clean_error(env.get("LINK_ERROR", ""))
+    license_error = clean_error(env.get("LICENSE_ERROR", ""))
+    metadata_error = clean_error(env.get("METADATA_ERROR", ""))
+    data_source_error = clean_error(env.get("DATA_SOURCE_ERROR", ""))
+    execute_error = clean_error(env.get("EXECUTE_ERROR", ""))
+    tests_error = clean_error(env.get("TEST_ERROR", ""))
+    figure_error = clean_error(env.get("FIGURE_ERROR", ""))
+    accessibility_error = clean_error(env.get("ACCESSIBILITY_ERROR", ""))
+    changelog_error = clean_error(env.get("CHANGELOG_ERROR", ""))
+    code_style_error = clean_error(
+        "\n".join(
+            part
+            for part in (
+                env.get("LINTER_ERROR", ""),
+                env.get("FORMATTER_ERROR", ""),
+                env.get("PYNBLINT_ERROR", ""),
+            )
+            if part.strip()
+        )
+    )
+
     summary_file = env.get("SUMMARY_FILE")
     if not summary_file:
         summary_file = str(Path(env.get("RUNNER_TEMP", "/tmp")) / "notebook-qa-summary.md")
@@ -94,7 +142,7 @@ def main() -> int:
         "All links in the learning resource must work.",
         "1.2.3",
         links_status,
-        "",
+        links_error,
     )
     append_row(
         rows,
@@ -102,7 +150,7 @@ def main() -> int:
         "All licences applicable to the learning resource must be provided.",
         "1.2.4",
         license_status,
-        "",
+        license_error,
     )
     append_row(
         rows,
@@ -110,7 +158,7 @@ def main() -> int:
         "The date of the most recent version of the learning resource must be stated.",
         "1.2.6",
         metadata_status,
-        "",
+        metadata_error,
     )
     append_row(
         rows,
@@ -126,7 +174,7 @@ def main() -> int:
         "All datasets used in the learning resource must be available.",
         "1.2.8",
         data_source_status,
-        "",
+        data_source_error,
     )
     append_row(
         rows,
@@ -134,7 +182,7 @@ def main() -> int:
         "All code cells must be able to run sequentially without errors.",
         "2.2.1",
         execute_status,
-        "",
+        execute_error,
     )
     append_row(
         rows,
@@ -142,7 +190,7 @@ def main() -> int:
         "All Python code must adhere to the Black style.",
         "2.2.3",
         code_style_status,
-        "",
+        code_style_error,
     )
     append_row(
         rows,
@@ -151,7 +199,7 @@ def main() -> int:
         "and operating systems.",
         "2.2.4",
         execute_status,
-        "",
+        execute_error,
     )
     append_row(
         rows,
@@ -167,7 +215,7 @@ def main() -> int:
         "The learning resource must be functional using the supplied dependencies and/or environment.",
         "2.3.1",
         execute_status,
-        "",
+        execute_error,
     )
     append_row(
         rows,
@@ -191,7 +239,7 @@ def main() -> int:
         "The learning resource must come with a set of tests for evaluating its performance.",
         "2.3.1",
         tests_status,
-        "",
+        tests_error,
     )
     append_row(
         rows,
@@ -199,7 +247,7 @@ def main() -> int:
         "Performance tests must pass with X% coverage.",
         "2.3.2",
         tests_status,
-        "",
+        tests_error,
     )
     append_row(
         rows,
@@ -207,7 +255,7 @@ def main() -> int:
         "Key text-based information must be compatible with text to audio software.",
         "3.1.3",
         accessibility_status,
-        "",
+        accessibility_error,
     )
     append_row(
         rows,
@@ -215,7 +263,7 @@ def main() -> int:
         "Graphs and figures must be properly labelled and include source information.",
         "3.3.2",
         figure_status,
-        "",
+        figure_error,
     )
     append_row(
         rows,
@@ -239,9 +287,9 @@ def main() -> int:
         "A record of all revisions and updates must be available in the documentation.",
         "4.2.3",
         changelog_status,
-        "",
+        changelog_error,
     )
-    append_row(rows, include_all, "In expert reviews only", "N/A", "N/A", "N/A")
+    append_row(rows, include_all, "In expert reviews only", "N/A", "N/A", comment="N/A")
 
     lines: list[str] = [
         "## AUTOMATED REVIEW",
@@ -257,10 +305,7 @@ def main() -> int:
         ),
     ]
     if rows:
-        lines.append(
-            "| Criterion | Ref no.<br>(to be deleted) | Automated Result<br>(to be copied from GH Actions) "
-            "| Technical Officer Comment |"
-        )
+        lines.append("| Criterion | Ref no. | Automated Result | Technical Officer Comment |")
         lines.append("| --- | --- | --- | --- |")
         lines.extend(rows)
     else:
