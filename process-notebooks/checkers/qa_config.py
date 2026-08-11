@@ -209,11 +209,7 @@ def get_pynblint_exclude(config: dict[str, Any]) -> str:
 
     mode = pynblint_config.get("exclude_mode", "extend")
 
-    if mode == "override":
-        exclude = user_exclude
-    else:
-        exclude = sorted(set(PYNBLINT_DEFAULT_EXCLUDE + user_exclude))
-
+    exclude = user_exclude if mode == "override" else sorted(set(PYNBLINT_DEFAULT_EXCLUDE + user_exclude))
     if not exclude:
         return ""
     return json.dumps(exclude)

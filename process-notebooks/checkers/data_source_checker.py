@@ -53,9 +53,7 @@ def check_data_source(notebook_path: str) -> str:
         return "skipped"
 
     code_cells = [
-        extract_cell_source(cell)
-        for cell in nb_data.get("cells", [])
-        if cell.get("cell_type") == "code"
+        extract_cell_source(cell) for cell in nb_data.get("cells", []) if cell.get("cell_type") == "code"
     ]
     all_code = "\n".join(code_cells)
 

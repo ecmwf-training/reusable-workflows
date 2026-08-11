@@ -47,12 +47,8 @@ def write_multiline_output(fh, key: str, lines: list[str]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Write QA config outputs for GitHub Actions")
-    parser.add_argument(
-        "--checks", nargs="+", required=True, help="Check IDs to produce output for"
-    )
-    parser.add_argument(
-        "--config", default=".github/notebook-qa.yml", help="Path to QA config file"
-    )
+    parser.add_argument("--checks", nargs="+", required=True, help="Check IDs to produce output for")
+    parser.add_argument("--config", default=".github/notebook-qa.yml", help="Path to QA config file")
     parser.add_argument(
         "--extras", action="store_true", help="Also write require_tests and coverage_threshold"
     )

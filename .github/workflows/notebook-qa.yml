@@ -23,6 +23,11 @@ on:
         required: false
         type: string
         default: "ecmwf-training/reusable-workflows"
+      qa_tools_ref:
+        description: "Git ref (branch, tag, or SHA) of the QA tools repository to check out"
+        required: false
+        type: string
+        default: ""
       jira_create_ticket:
         description: "Create Jira ticket on failure (requires JIRA_* secrets)"
         required: false
@@ -38,6 +43,16 @@ on:
         required: false
         type: string
         default: "notebook-qa,automated"
+      pr_comment_summary:
+        description: "Post the automated review summary as a pull request comment"
+        required: false
+        type: boolean
+        default: true
+      summarise_all_checks:
+        description: "Include all checks in the summary table (default: only failed checks)"
+        required: false
+        type: boolean
+        default: false
     secrets:
       JIRA_BASE_URL:
         required: false
@@ -109,6 +124,7 @@ jobs:
       test_result: ${{ steps.test_checker.outcome }}
       figure_result: ${{ steps.figure_checker.outcome }}
       metadata_result: ${{ steps.metadata_checker.outcome }}
+      data_source_result: ${{ steps.data_source_checker.outcome }}
       accessibility_result: ${{ steps.accessibility_checker.outcome }}
       license_result: ${{ steps.license.outcome }}
       changelog_result: ${{ steps.changelog.outcome }}
@@ -121,6 +137,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.qa_tools_repo }}
+          ref: ${{ inputs.qa_tools_ref }}
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
@@ -208,21 +225,34 @@ jobs:
           fail: true
 
       # Test coverage (direct pytest-cov)
+      - name: Detect test files
+        id: test_files
+        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
+        run: |
+          shopt -s nullglob
+          test_files=(test_*.py *_test.py tests/*.py)
+          if [ "${#test_files[@]}" -gt 0 ]; then
+            echo "has_tests=true" >> "$GITHUB_OUTPUT"
+            echo "Test files:"
+            printf '  %s\n' "${test_files[@]}"
+          else
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
+            echo "No test files found"
+          fi
+
       - name: (2.3.1, 2.3.2) Check tests and coverage
         id: test_checker
-        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
+        if: (success() || failure()) && steps.config.outputs.skip_tests != 'true' && (steps.test_files.outputs.has_tests == 'true' || steps.config.outputs.require_tests == 'true')
         env:
-          REQUIRE_TESTS: ${{ steps.config.outputs.require_tests }}
+          HAS_TESTS: ${{ steps.test_files.outputs.has_tests }}
           COVERAGE_THRESHOLD: ${{ steps.config.outputs.coverage_threshold }}
         run: |
-          if ls test_*.py *_test.py tests/*.py 2>/dev/null; then
+          if [ "$HAS_TESTS" = "true" ]; then
             pytest --cov=. --cov-report=term --cov-fail-under="$COVERAGE_THRESHOLD"
           else
             echo "::warning::No test files found"
-            if [ "$REQUIRE_TESTS" = "true" ]; then
-              echo "Tests are required by configuration (require_tests: true)"
-              exit 1
-            fi
+            echo "Tests are required by configuration (require_tests: true)"
+            exit 1
           fi
 
       # Custom checks
@@ -313,6 +343,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.qa_tools_repo }}
+          ref: ${{ inputs.qa_tools_ref }}
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
@@ -414,81 +445,96 @@ jobs:
           path: ${{ env.QA_OUTPUT_DIR }}
           if-no-files-found: ignore
 
-  # Job 3: Create Jira ticket on failure (optional)
-  notify-failure:
-    needs: [lint, execute]
+  # Job 3: Write workflow status summary
+  summary:
+    needs: [collect, lint, execute]
     runs-on: ubuntu-latest
-    if: >-
-      always() &&
-      inputs.jira_create_ticket == true &&
-      (needs.lint.result == 'failure' || needs.execute.result == 'failure')
+    if: always()
     steps:
-      - name: Login to Jira
-        uses: atlassian/gajira-login@45fd029b9f1d6d8926c6f04175aa80c0e42c9026 # v3.0.1
-        env:
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }} # zizmor: ignore[secrets-outside-env]
-          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }} # zizmor: ignore[secrets-outside-env]
-          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }} # zizmor: ignore[secrets-outside-env]
-
-      - name: Build failure summary
-        id: summary
-        env:
-          LINT_LINTER: ${{ needs.lint.outputs.linter_result }}
-          LINT_FORMATTER: ${{ needs.lint.outputs.formatter_result }}
-          LINT_PYNBLINT: ${{ needs.lint.outputs.pynblint_result }}
-          LINT_LINKS: ${{ needs.lint.outputs.link_result }}
-          LINT_TESTS: ${{ needs.lint.outputs.test_result }}
-          LINT_FIGURES: ${{ needs.lint.outputs.figure_result }}
-          LINT_METADATA: ${{ needs.lint.outputs.metadata_result }}
-          LINT_A11Y: ${{ needs.lint.outputs.accessibility_result }}
-          LINT_LICENSE: ${{ needs.lint.outputs.license_result }}
-          LINT_CHANGELOG: ${{ needs.lint.outputs.changelog_result }}
-          EXEC_RESULT: ${{ needs.execute.outputs.execute_result }}
-          JIRA_LABELS_INPUT: ${{ inputs.jira_labels }}
-        run: |
-          # Build a list of failed checks
-          FAILED_CHECKS=""
-
-          # Lint job checks
-          [ "$LINT_LINTER" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Linter (ruff check)\n"
-          [ "$LINT_FORMATTER" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Formatter (ruff format)\n"
-          [ "$LINT_PYNBLINT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Pynblint\n"
-          [ "$LINT_LINKS" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Link checker\n"
-          [ "$LINT_TESTS" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Tests/coverage\n"
-          [ "$LINT_FIGURES" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Figure labels/sources\n"
-          [ "$LINT_METADATA" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Version metadata\n"
-          [ "$LINT_A11Y" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Accessibility\n"
-          [ "$LINT_LICENSE" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- LICENSE file\n"
-          [ "$LINT_CHANGELOG" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- CHANGELOG\n"
-
-          # Execute job
-          [ "$EXEC_RESULT" = "failure" ] && FAILED_CHECKS="${FAILED_CHECKS}- Notebook execution\n"
-
-          echo "failed_checks<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$FAILED_CHECKS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          # Convert comma-separated labels to JSON array
-          LABELS_JSON=$(echo "$JIRA_LABELS_INPUT" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -s .)
-          echo "labels_json=$LABELS_JSON" >> $GITHUB_OUTPUT
-
-      - name: Create Jira ticket
-        uses: atlassian/gajira-create@59e177c4f6451399df5b4911c2211104f171e669 # v3.0.1
+      - name: Checkout QA tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          project: ${{ secrets.JIRA_PROJECT_KEY }} # zizmor: ignore[secrets-outside-env]
-          issuetype: ${{ inputs.jira_issue_type }}
-          summary: "[Notebook QA] Checks failed in ${{ github.repository }} (${{ github.ref_name }})"
-          description: |
-            h2. Notebook QA Workflow Failure
+          repository: ${{ inputs.qa_tools_repo }}
+          ref: ${{ inputs.qa_tools_ref }}
+          path: .tmp/${{ github.run_id }}-qa-tools
+          persist-credentials: false
 
-            *Repository:* ${{ github.repository }}
-            *Branch:* ${{ github.ref_name }}
-            *Commit:* ${{ github.sha }}
-            *Workflow Run:* [View logs|${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}]
+      - name: Write automated review summary
+        id: review_summary
+        env:
+          LINT_JOB_RESULT: ${{ needs.lint.result }}
+          EXECUTE_JOB_RESULT: ${{ needs.execute.result }}
+          LINK_RESULT: ${{ needs.lint.outputs.link_result }}
+          LICENSE_RESULT: ${{ needs.lint.outputs.license_result }}
+          METADATA_RESULT: ${{ needs.lint.outputs.metadata_result }}
+          DATA_SOURCE_RESULT: ${{ needs.lint.outputs.data_source_result }}
+          LINTER_RESULT: ${{ needs.lint.outputs.linter_result }}
+          FORMATTER_RESULT: ${{ needs.lint.outputs.formatter_result }}
+          PYNBLINT_RESULT: ${{ needs.lint.outputs.pynblint_result }}
+          TEST_RESULT: ${{ needs.lint.outputs.test_result }}
+          FIGURE_RESULT: ${{ needs.lint.outputs.figure_result }}
+          ACCESSIBILITY_RESULT: ${{ needs.lint.outputs.accessibility_result }}
+          CHANGELOG_RESULT: ${{ needs.lint.outputs.changelog_result }}
+          EXECUTE_RESULT: ${{ needs.execute.outputs.execute_result }}
+          SUMMARY_FILE: ${{ runner.temp }}/notebook-qa-summary.md
+          SUMMARISE_ALL_CHECKS: ${{ inputs.summarise_all_checks }}
+        run: |
+          python3 .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_review_summary.py
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
 
-            h3. Failed Checks
-            ${{ steps.summary.outputs.failed_checks }}
+      - name: Post automated review summary comment
+        if: >-
+          always() &&
+          inputs.pr_comment_summary == true &&
+          github.event.pull_request.number != '' &&
+          steps.review_summary.outputs.summary_file != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SUMMARY_FILE: ${{ steps.review_summary.outputs.summary_file }}
+        run: |
+          comment_marker="<!-- notebook-qa-summary-comment -->"
+          comments_url="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
+          comment_file="${RUNNER_TEMP:-/tmp}/notebook-qa-summary-comment.md"
+          payload_file="${RUNNER_TEMP:-/tmp}/notebook-qa-comment-payload.json"
 
-            h3. Triggered By
-            ${{ github.event.head_commit.message || github.event.pull_request.title || 'Manual run' }}
-          fields: '{"labels": ${{ steps.summary.outputs.labels_json }}}'
+          {
+            echo "$comment_marker"
+            echo
+            cat "$SUMMARY_FILE"
+            echo
+            echo "_Updated by [workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})._"
+          } > "$comment_file"
+
+          set -o pipefail
+          if ! existing_comment_id=$(gh api "$comments_url" \
+            --paginate \
+            --jq '.[] | select((.body // "") | contains("<!-- notebook-qa-summary-comment -->")) | .id' \
+            | sed -n '1p'); then
+            echo "::warning::Unable to list pull request comments. Grant pull-requests: write to the reusable workflow caller to enable QA summary comments."
+            exit 0
+          fi
+
+          python3 - "$comment_file" "$payload_file" << 'EOF'
+          import json
+          import sys
+
+          comment_path, payload_path = sys.argv[1], sys.argv[2]
+          with open(comment_path, encoding="utf-8") as comment_file:
+              body = comment_file.read()
+
+          with open(payload_path, "w", encoding="utf-8") as payload_file:
+              json.dump({"body": body}, payload_file)
+          EOF
+
+          if [ -n "$existing_comment_id" ]; then
+            if gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing_comment_id}" --input "$payload_file" > /dev/null; then
+              echo "Updated pull request QA summary comment."
+            else
+              echo "::warning::Unable to update pull request QA summary comment."
+            fi
+          elif gh api --method POST "$comments_url" --input "$payload_file" > /dev/null; then
+            echo "Created pull request QA summary comment."
+          else
+            echo "::warning::Unable to create pull request QA summary comment."
+          fi
