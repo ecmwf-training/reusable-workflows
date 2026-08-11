@@ -52,7 +52,7 @@ def aggregate_status(results: list[str], lint_job_result: str) -> str:
 
 def append_row(rows: list[str], include_all: bool, *columns: str) -> None:
     """Record a table row, filtering to failures unless include_all is set."""
-    if include_all or columns[3] == "Fail":
+    if include_all or columns[2] == "Fail":
         rows.append("| " + " | ".join(columns) + " |")
 
 
@@ -88,31 +88,43 @@ def main() -> int:
 
     rows: list[str] = []
 
-    append_row(rows, include_all, "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable.", "All links in the learning resource must work.", "1.2.3", links_status, "")
-    append_row(rows, include_all, "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable.", "All licences applicable to the learning resource must be provided.", "1.2.4", license_status, "")
-    append_row(rows, include_all, "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable.", "The date of the most recent version of the learning resource must be stated.", "1.2.6", metadata_status, "")
-    append_row(rows, include_all, "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable.", "The date of the most recent execution of the learning resource code must be stated.", "1.2.7", "N/A", "")
-    append_row(rows, include_all, "Reliable access<br>Access to the learning resource and all corresponding information must be open, free, and reliable.", "All datasets used in the learning resource must be available.", "1.2.8", data_source_status, "")
-    append_row(rows, include_all, "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly.", "All code cells must be able to run sequentially without errors.", "2.2.1", execute_status, "")
-    append_row(rows, include_all, "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly.", "All Python code must adhere to the Black style.", "2.2.3", code_style_status, "")
-    append_row(rows, include_all, "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly.", "All installation/execute instructions must be functional across current devices and operating systems.", "2.2.4", execute_status, "")
-    append_row(rows, include_all, "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly.", "All installation/execute instructions must be functional across current internet browsers.", "2.2.5", "N/A", "")
-    append_row(rows, include_all, "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly.", "The learning resource must be functional using the supplied dependencies and/or environment.", "2.3.1", execute_status, "")
-    append_row(rows, include_all, "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly.", "All dependencies of the source code must be stable and reliable.", "2.2.8", "N/A", "")
-    append_row(rows, include_all, "Code Functionality<br>The code must function as intended, comply with relevant standards, and be user friendly.", "All dependencies of the source code must be regularly security checked.", "2.2.7", "N/A", "")
-    append_row(rows, include_all, "Performance<br>The learning resource must be responsive.", "The learning resource must come with a set of tests for evaluating its performance.", "2.3.1", tests_status, "")
-    append_row(rows, include_all, "Performance<br>The learning resource must be responsive.", "Performance tests must pass with X% coverage.", "2.3.2", tests_status, "")
-    append_row(rows, include_all, "Accessibility<br>The learning resource must comply with accessibility standards.", "Key text-based information must be compatible with text to audio software.", "3.1.3", accessibility_status, "")
-    append_row(rows, include_all, "Interpretation<br>The learning resource must maintain scientific integrity.", "Graphs and figures must be properly labelled and include source information.", "3.3.2", figure_status, "")
-    append_row(rows, include_all, "Scientific Basis and Value<br>Documentation on the scientific basis and value of the learning resource must be available.", "Underlying sources, datasets, and publications must be referenced.", "4.1.1", "N/A", "")
-    append_row(rows, include_all, "Scientific Basis and Value<br>Documentation on the scientific basis and value of the learning resource must be available.", "All figures, tables, and datasets must be accompanied by appropriate attribution and explanations.", "4.1.2", "N/A", "")
-    append_row(rows, include_all, "Quality Control<br>Quality control and validation activities must be fully documented.", "A record of all revisions and updates must be available in the documentation.", "4.2.3", changelog_status, "")
-    append_row(rows, include_all, "In expert reviews only", "N/A", "N/A", "N/A", "N/A")
+    append_row(rows, include_all, "All links in the learning resource must work.", "1.2.3", links_status, "")
+    append_row(rows, include_all, "All licences applicable to the learning resource must be provided.", "1.2.4", license_status, "")
+    append_row(rows, include_all, "The date of the most recent version of the learning resource must be stated.", "1.2.6", metadata_status, "")
+    append_row(rows, include_all, "The date of the most recent execution of the learning resource code must be stated.", "1.2.7", "N/A", "")
+    append_row(rows, include_all, "All datasets used in the learning resource must be available.", "1.2.8", data_source_status, "")
+    append_row(rows, include_all, "All code cells must be able to run sequentially without errors.", "2.2.1", execute_status, "")
+    append_row(rows, include_all, "All Python code must adhere to the Black style.", "2.2.3", code_style_status, "")
+    append_row(rows, include_all, "All installation/execute instructions must be functional across current devices and operating systems.", "2.2.4", execute_status, "")
+    append_row(rows, include_all, "All installation/execute instructions must be functional across current internet browsers.", "2.2.5", "N/A", "")
+    append_row(rows, include_all, "The learning resource must be functional using the supplied dependencies and/or environment.", "2.3.1", execute_status, "")
+    append_row(rows, include_all, "All dependencies of the source code must be stable and reliable.", "2.2.8", "N/A", "")
+    append_row(rows, include_all, "All dependencies of the source code must be regularly security checked.", "2.2.7", "N/A", "")
+    append_row(rows, include_all, "The learning resource must come with a set of tests for evaluating its performance.", "2.3.1", tests_status, "")
+    append_row(rows, include_all, "Performance tests must pass with X% coverage.", "2.3.2", tests_status, "")
+    append_row(rows, include_all, "Key text-based information must be compatible with text to audio software.", "3.1.3", accessibility_status, "")
+    append_row(rows, include_all, "Graphs and figures must be properly labelled and include source information.", "3.3.2", figure_status, "")
+    append_row(rows, include_all, "Underlying sources, datasets, and publications must be referenced.", "4.1.1", "N/A", "")
+    append_row(rows, include_all, "All figures, tables, and datasets must be accompanied by appropriate attribution and explanations.", "4.1.2", "N/A", "")
+    append_row(rows, include_all, "A record of all revisions and updates must be available in the documentation.", "4.2.3", changelog_status, "")
+    append_row(rows, include_all, "In expert reviews only", "N/A", "N/A", "N/A")
 
-    lines: list[str] = ["## AUTOMATED REVIEW", ""]
+    lines: list[str] = [
+        "## AUTOMATED REVIEW",
+        "",
+        ( 
+            "The table below summarises the results of the automated checks performed on learning resource."
+            "It should be copied to the 'Automated Review' section of the review checklist. "
+        ),
+        (
+            "The 'Automated Result' column is populated from the results of the GitHub Actions "
+            "workflow, and the 'Technical Officer Comment' column is for any additional comments from the "
+            "technical officer."
+        ),
+    ]
     if rows:
-        lines.append("| Requirement | Criterion | Ref no.<br>(to be deleted) | Automated Result<br>(to be copied from GH Actions) | Technical Officer Comment |")
-        lines.append("| --- | --- | --- | --- | --- |")
+        lines.append("| Criterion | Ref no.<br>(to be deleted) | Automated Result<br>(to be copied from GH Actions) | Technical Officer Comment |")
+        lines.append("| --- | --- | --- | --- |")
         lines.extend(rows)
     else:
         lines.append("All automated checks passed. No failures to report.")
