@@ -424,6 +424,13 @@ jobs:
           environment-file: environment.yml
           use-mamba: true
 
+      - name: Ensure standard (GIL-enabled) Python build
+        if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != ''
+        run: |
+          # Replace any free-threaded interpreter with the regular GIL build so cftime loads without warnings
+          pyver=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+          mamba install -n notebook-qa -y "python_abi=${pyver}=*_cp${pyver//./}"
+
       - name: Install execution tools
         if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != ''
         run: pip install ploomber-engine psutil matplotlib pyyaml
