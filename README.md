@@ -7,6 +7,10 @@ This repository contains reusable GitHub Actions workflows for C3S projects. The
 
 This workflow implements QA automation for Jupyter Notebooks. The checks below run automatically — all checks that are not skipped or disabled must pass for the workflow to succeed.
 
+On pull requests, only notebooks changed relative to the PR base are checked. On pushes and manual `workflow_dispatch` runs, all `*.ipynb` files are checked (unless a specific list is supplied via the `notebooks` input).
+
+Checks are split across three jobs: a fast `lint` job for static checks, an `execute` job for end-to-end notebook execution (on a configurable runner), and a `summary` job that renders the automated review table.
+
 #### Checks
 
 **Code linting** (`linter`) — Runs `ruff check` on all code cells. No Python lint violations allowed.
@@ -17,7 +21,9 @@ This workflow implements QA automation for Jupyter Notebooks. The checks below r
 
 **Link availability** (`links`) — Runs `lychee` against all notebooks. Every URL in markdown and code cells must be reachable.
 
-**Notebook execution** (`execute`) — Executes each notebook end-to-end with `ploomber-engine`. The notebook must run without errors. Memory usage and runtime are profiled per cell and uploaded as an artifact.
+**Notebook execution** (`execute`) — Executes each notebook end-to-end with `ploomber-engine` inside a Conda environment built from the consuming repository's `environment.yml`. The notebook must run without errors. Memory usage and runtime are profiled per cell and uploaded as an artifact. The runner and timeout are configurable via the `execution_runner` and `execution_timeout` inputs.
+
+**Data source availability** (`data_source`) — Warning-only check. Inspects code cells for how data is sourced. If data is fetched but not via approved sources (`cdsapi`, `earthkit`, or the CDS/ADS APIs), it emits a warning annotation. This check never fails the workflow.
 
 **Version metadata** (`metadata`) — Looks for `**Last updated:** YYYY-MM-DD` (e.g. `**Last updated:** 2025-01-15`) in the first markdown cell(s) before any code cell. Falls back to a `README.md` in the same directory if not found in the notebook.
 
@@ -74,6 +80,30 @@ This sets up automated checks on new pull requests and merges/pushes into `devel
 
 The workflow writes the automated review table to the GitHub Actions job summary and, by default, updates a single managed comment on pull requests. Set `pr_comment_summary: false` to disable PR comments. The caller workflow must grant `pull-requests: write` for PR comments to work; reusable workflows cannot elevate the caller's `GITHUB_TOKEN` permissions. Pull requests from forks may still receive read-only tokens depending on the target repository settings.
 
+By default the summary table only lists checks that failed. Set `summarise_all_checks: true` to include every check (passed, skipped, and failed) in the table.
+
+#### Workflow inputs
+
+All inputs are optional.
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `notebooks` | `""` | Space-separated list of notebook paths to check. Empty checks all `*.ipynb` (or changed notebooks on PRs). |
+| `execution_runner` | `ubuntu-latest` | Runner for the notebook execution job. Supports self-hosted runners. |
+| `execution_timeout` | `60` | Timeout in minutes for the notebook execution job. |
+| `qa_tools_repo` | `ecmwf-training/reusable-workflows` | Repository containing the QA checker tools. |
+| `qa_tools_ref` | `""` | Git ref (branch, tag, or SHA) of the QA tools repository to check out. |
+| `pr_comment_summary` | `true` | Post/update the automated review summary as a pull request comment. |
+| `summarise_all_checks` | `false` | Include all checks in the summary table instead of only failed checks. |
+
+#### Workflow secrets
+
+All secrets are optional and can be passed via `secrets: inherit` or explicitly.
+
+| Secret | Description |
+|--------|-------------|
+| `CDSAPI_KEY` | API key used to configure `cdsapi` for the notebook execution check. |
+
 
 #### Configuration
 
@@ -108,11 +138,11 @@ pynblint:
   exclude_mode: extend        # "extend" (default) or "override"
 ```
 
-The baseline pynblint exclusion list suppresses `missing-h1-MD-heading` (MyST notebooks use YAML frontmatter for titles). In `extend` mode (default), your `exclude` list is merged with the baseline. In `override` mode, your list fully replaces the baseline.
+The baseline pynblint exclusion list suppresses `missing-h1-MD-heading` (MyST notebooks use YAML frontmatter for titles) and `imports-beyond-first-cell`. In `extend` mode (default), your `exclude` list is merged with the baseline. In `override` mode, your list fully replaces the baseline.
 
 Available pynblint rule slugs: `non-linear-execution`, `notebook-too-long`, `untitled-notebook`, `non-portable-chars-in-nb-name`, `notebook-name-too-long`, `imports-beyond-first-cell`, `missing-h1-MD-heading`, `missing-opening-MD-text`, `missing-closing-MD-text`, `too-few-MD-cells`, `duplicate-notebook-not-renamed`, `invalid-python-syntax`, `non-executed-notebook`, `non-executed-cells`, `empty-cells`, `long-multiline-python-comment`, `cell-too-long`
 
-Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `tests`, `figures`, `metadata`, `accessibility`, `license`, `changelog`, `execute`
+Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `tests`, `figures`, `metadata`, `data_source`, `accessibility`, `license`, `changelog`, `execute`
 
 
 #### QA criteria reference
@@ -122,6 +152,7 @@ Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `tests`, `figures`,
 | 1.2.3 | Link availability         | lychee                 |
 | 1.2.4 | License file              | LICENSE existence       |
 | 1.2.6 | Version metadata          | metadata_checker.py    |
+| 1.2.8 | Data source availability  | data_source_checker.py |
 | 2.2.1 | Code execution            | ploomber-engine        |
 | 2.2.3 | Code style                | ruff, pynblint         |
 | 2.2.4 | Execution profiling       | ploomber-engine        |
@@ -131,6 +162,11 @@ Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `tests`, `figures`,
 | 3.1.3 | Accessibility             | jupyterlab-a11y-checker|
 | 3.3.2 | Figure attribution        | figure_checker.py      |
 | 4.2.3 | Changelog                 | CHANGELOG.md existence |
+
+
+### Notebook execution environment
+
+The notebook execution check builds a Conda environment from an `environment.yml` file in the consuming repository root. Ensure this file exists and declares all dependencies required to run the notebooks. Execution tooling (`ploomber-engine`, `psutil`, `matplotlib`, `pyyaml`) is installed automatically on top of this environment.
 
 
 ### How to configure access to cdsapi for notebook execution check

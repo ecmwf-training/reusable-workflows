@@ -28,21 +28,6 @@ on:
         required: false
         type: string
         default: ""
-      jira_create_ticket:
-        description: "Create Jira ticket on failure (requires JIRA_* secrets)"
-        required: false
-        type: boolean
-        default: false
-      jira_issue_type:
-        description: "Jira issue type for failure tickets"
-        required: false
-        type: string
-        default: "Bug"
-      jira_labels:
-        description: "Comma-separated labels for Jira ticket"
-        required: false
-        type: string
-        default: "notebook-qa,automated"
       pr_comment_summary:
         description: "Post the automated review summary as a pull request comment"
         required: false
@@ -54,14 +39,6 @@ on:
         type: boolean
         default: false
     secrets:
-      JIRA_BASE_URL:
-        required: false
-      JIRA_USER_EMAIL:
-        required: false
-      JIRA_API_TOKEN:
-        required: false
-      JIRA_PROJECT_KEY:
-        required: false
       CDSAPI_KEY:
         required: false
 
