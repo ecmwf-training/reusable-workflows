@@ -7,6 +7,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Link to the GitHub Actions run logs; set in main() and used for the fallback error cell.
+_logs_url = ""
+
 
 def format_status(result: str) -> str:
     mapping = {
@@ -60,11 +63,33 @@ def clean_error(text: str) -> str:
     return text.replace("\n", "<br>")
 
 
+def resolve_logs_url(env) -> str:
+    """Resolve the URL to the GitHub Actions run logs."""
+    url = env.get("LOGS_URL", "").strip()
+    if url:
+        return url
+    server = env.get("GITHUB_SERVER_URL", "https://github.com")
+    repo = env.get("GITHUB_REPOSITORY", "")
+    run_id = env.get("GITHUB_RUN_ID", "")
+    if repo and run_id:
+        return f"{server}/{repo}/actions/runs/{run_id}"
+    return ""
+
+
 def result_cell(status: str, error: str) -> str:
     """Render the Automated Result cell with a bold status and optional error detail."""
     cell = f"**{status}**"
-    if status == "Fail" and error:
+    if status != "Fail":
+        return cell
+    if error:
         cell += "<br>" + error
+    elif _logs_url:
+        cell += (
+            "<br>Unable to gather error message please see full github logs: "
+            f"[GitHub Actions logs]({_logs_url})"
+        )
+    else:
+        cell += "<br>Unable to gather error message please see full github logs."
     return cell
 
 
@@ -84,7 +109,9 @@ def append_row(
 
 
 def main() -> int:
+    global _logs_url
     env = os.environ
+    _logs_url = resolve_logs_url(env)
 
     lint_job_result = env.get("LINT_JOB_RESULT", "")
     execute_job_result = env.get("EXECUTE_JOB_RESULT", "")
