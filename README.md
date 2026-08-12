@@ -92,7 +92,7 @@ All inputs are optional.
 | `execution_runner` | `ubuntu-latest` | Runner for the notebook execution job. Supports self-hosted runners. |
 | `execution_timeout` | `60` | Timeout in minutes for the notebook execution job. |
 | `qa_tools_repo` | `ecmwf-training/reusable-workflows` | Repository containing the QA checker tools. |
-| `qa_tools_ref` | `""` | Git ref (branch, tag, or SHA) of the QA tools repository to check out. |
+| `qa_tools_ref` | `""` | Git ref (branch, tag, or SHA) of the QA tools repository to check out. When empty, defaults to the reusable workflow's own commit so the checker tools always match the workflow version. |
 | `pr_comment_summary` | `true` | Post/update the automated review summary as a pull request comment. |
 | `summarise_all_checks` | `false` | Include all checks in the summary table instead of only failed checks. |
 

@@ -24,7 +24,7 @@ on:
         type: string
         default: "ecmwf-training/reusable-workflows"
       qa_tools_ref:
-        description: "Git ref (branch, tag, or SHA) of the QA tools repository to check out"
+        description: "Git ref (branch, tag, or SHA) of the QA tools repository to check out (default: the reusable workflow's own commit)"
         required: false
         type: string
         default: ""
@@ -124,7 +124,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.qa_tools_repo }}
-          ref: ${{ inputs.qa_tools_ref }}
+          # Default to the reusable workflow's own commit so pinned callers get matching tools
+          ref: ${{ inputs.qa_tools_ref || github.job_workflow_sha }}
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
@@ -390,7 +391,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.qa_tools_repo }}
-          ref: ${{ inputs.qa_tools_ref }}
+          # Default to the reusable workflow's own commit so pinned callers get matching tools
+          ref: ${{ inputs.qa_tools_ref || github.job_workflow_sha }}
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
@@ -525,7 +527,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.qa_tools_repo }}
-          ref: ${{ inputs.qa_tools_ref }}
+          # Default to the reusable workflow's own commit so pinned callers get matching tools
+          ref: ${{ inputs.qa_tools_ref || github.job_workflow_sha }}
           path: .tmp/${{ github.run_id }}-qa-tools
           persist-credentials: false
 
