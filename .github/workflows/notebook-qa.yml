@@ -555,7 +555,6 @@ jobs:
       - name: Write automated review summary
         id: review_summary
         env:
-          GH_TOKEN: ${{ github.token }}
           LINT_JOB_RESULT: ${{ needs.lint.result }}
           EXECUTE_JOB_RESULT: ${{ needs.execute.result }}
           LINK_RESULT: ${{ needs.lint.outputs.link_result }}
@@ -585,18 +584,7 @@ jobs:
           SUMMARISE_ALL_CHECKS: ${{ inputs.summarise_all_checks }}
         run: |
           python3 .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_review_summary.py
-          # Deep-link to the lint job logs; fall back to the run page if the API is unavailable
-          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          lint_job_url=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" \
-            --paginate --jq '.jobs[] | select(.name | endswith("lint")) | .html_url' 2>/dev/null | head -n1 || true)
-          [ -n "$lint_job_url" ] || lint_job_url="$run_url"
-          echo "lint_job_url=$lint_job_url" >> "$GITHUB_OUTPUT"
-          {
-            cat "$SUMMARY_FILE"
-            echo
-            echo "See the full check output in the [lint job logs]($lint_job_url)."
-          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post automated review summary comment
         if: >-
@@ -608,7 +596,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           SUMMARY_FILE: ${{ steps.review_summary.outputs.summary_file }}
-          LINT_JOB_URL: ${{ steps.review_summary.outputs.lint_job_url }}
         run: |
           comment_marker="<!-- notebook-qa-summary-comment -->"
           comments_url="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
@@ -620,7 +607,7 @@ jobs:
             echo
             cat "$SUMMARY_FILE"
             echo
-            echo "_See the full check output in the [lint job logs](${LINT_JOB_URL}). Updated by [workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})._"
+            echo "_Updated by [workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})._"
           } > "$comment_file"
 
           set -o pipefail
