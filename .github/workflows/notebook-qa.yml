@@ -131,12 +131,13 @@ jobs:
       linter_error: ${{ steps.errors.outputs.linter_error }}
       formatter_error: ${{ steps.errors.outputs.formatter_error }}
       pynblint_error: ${{ steps.errors.outputs.pynblint_error }}
-      test_error: ${{ steps.errors.outputs.test_error }}
       figure_error: ${{ steps.errors.outputs.figure_error }}
       metadata_error: ${{ steps.errors.outputs.metadata_error }}
       data_source_error: ${{ steps.errors.outputs.data_source_error }}
       license_error: ${{ steps.errors.outputs.license_error }}
       changelog_error: ${{ steps.errors.outputs.changelog_error }}
+      link_error: ${{ steps.errors.outputs.link_error }}
+      test_error: ${{ steps.errors.outputs.test_error }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -178,7 +179,8 @@ jobs:
           NOTEBOOKS: ${{ steps.config.outputs.notebooks_linter }}
         run: |
           mapfile -t nbs <<< "$NOTEBOOKS"
-          ruff check "${nbs[@]}" 2>&1 | tee "$RUNNER_TEMP/qa_linter.log"
+          # Concise output: one readable line per violation so it survives capture into the summary table
+          ruff check --output-format=concise "${nbs[@]}" 2>&1 | tee "$RUNNER_TEMP/qa_linter.log"
 
       - name: (2.2.3) Run formatter
         id: formatter
@@ -233,9 +235,12 @@ jobs:
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --verbose --no-progress ${{ steps.config.outputs.notebooks_links }}
+          output: ${{ runner.temp }}/qa_links.md
+          format: markdown
           fail: true
+          jobSummary: false
 
-      # Test coverage (direct pytest-cov)
+      # Test coverage
       - name: Detect test files
         id: test_files
         if: (success() || failure()) && steps.config.outputs.skip_tests != 'true'
@@ -346,6 +351,7 @@ jobs:
           LINTER_OUTCOME: ${{ steps.linter.outcome }}
           FORMATTER_OUTCOME: ${{ steps.formatter.outcome }}
           PYNBLINT_OUTCOME: ${{ steps.pynblint.outcome }}
+          LINK_OUTCOME: ${{ steps.link_checker.outcome }}
           TEST_OUTCOME: ${{ steps.test_checker.outcome }}
           FIGURE_OUTCOME: ${{ steps.figure_checker.outcome }}
           METADATA_OUTCOME: ${{ steps.metadata_checker.outcome }}
@@ -374,6 +380,16 @@ jobs:
           emit data_source_error "$DATA_SOURCE_OUTCOME" "$RUNNER_TEMP/qa_data_source.log"
           emit license_error "$LICENSE_OUTCOME" "$RUNNER_TEMP/qa_license.log"
           emit changelog_error "$CHANGELOG_OUTCOME" "$RUNNER_TEMP/qa_changelog.log"
+          # lychee is a third-party action: harvest its markdown report, keeping only the broken-link lines
+          if [ "$LINK_OUTCOME" = "failure" ] && [ -s "$RUNNER_TEMP/qa_links.md" ]; then
+            link_errors=$(grep -E 'https?://' "$RUNNER_TEMP/qa_links.md" | head -n 20 || true)
+            [ -n "$link_errors" ] || link_errors=$(tail -n 20 "$RUNNER_TEMP/qa_links.md")
+            {
+              echo "link_error<<__QA_ERR_EOF__"
+              printf '%s\n' "$link_errors" | sed -r 's/\x1b\[[0-9;]*[mGKH]//g'
+              echo "__QA_ERR_EOF__"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   # Job 2: Notebook execution (resource-intensive, configurable runner)
   execute:
@@ -539,6 +555,7 @@ jobs:
       - name: Write automated review summary
         id: review_summary
         env:
+          GH_TOKEN: ${{ github.token }}
           LINT_JOB_RESULT: ${{ needs.lint.result }}
           EXECUTE_JOB_RESULT: ${{ needs.execute.result }}
           LINK_RESULT: ${{ needs.lint.outputs.link_result }}
@@ -553,19 +570,30 @@ jobs:
           ACCESSIBILITY_RESULT: ${{ needs.lint.outputs.accessibility_result }}
           CHANGELOG_RESULT: ${{ needs.lint.outputs.changelog_result }}
           EXECUTE_RESULT: ${{ needs.execute.outputs.execute_result }}
+          LINK_ERROR: ${{ needs.lint.outputs.link_error }}
           LINTER_ERROR: ${{ needs.lint.outputs.linter_error }}
           FORMATTER_ERROR: ${{ needs.lint.outputs.formatter_error }}
           PYNBLINT_ERROR: ${{ needs.lint.outputs.pynblint_error }}
-          TEST_ERROR: ${{ needs.lint.outputs.test_error }}
           FIGURE_ERROR: ${{ needs.lint.outputs.figure_error }}
           METADATA_ERROR: ${{ needs.lint.outputs.metadata_error }}
           DATA_SOURCE_ERROR: ${{ needs.lint.outputs.data_source_error }}
           LICENSE_ERROR: ${{ needs.lint.outputs.license_error }}
           CHANGELOG_ERROR: ${{ needs.lint.outputs.changelog_error }}
+          TEST_ERROR: ${{ needs.lint.outputs.test_error }}
           EXECUTE_ERROR: ${{ needs.execute.outputs.execute_error }}
           SUMMARY_FILE: ${{ runner.temp }}/notebook-qa-summary.md
           SUMMARISE_ALL_CHECKS: ${{ inputs.summarise_all_checks }}
         run: |
+          # Deep-link each check to its owning job's logs; fall back to the run page
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
+          lint_url=$(gh api "$jobs_api" --paginate \
+            --jq '.jobs[] | select(.name | endswith("lint")) | .html_url' 2>/dev/null | head -n1 || true)
+          execute_url=$(gh api "$jobs_api" --paginate \
+            --jq '.jobs[] | select(.name | endswith("execute")) | .html_url' 2>/dev/null | head -n1 || true)
+          export LOGS_URL="$run_url"
+          export LINT_LOGS_URL="${lint_url:-$run_url}"
+          export EXECUTE_LOGS_URL="${execute_url:-$run_url}"
           python3 .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_review_summary.py
           cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
 
