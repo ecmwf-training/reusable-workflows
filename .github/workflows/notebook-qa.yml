@@ -555,6 +555,7 @@ jobs:
       - name: Write automated review summary
         id: review_summary
         env:
+          GH_TOKEN: ${{ github.token }}
           LINT_JOB_RESULT: ${{ needs.lint.result }}
           EXECUTE_JOB_RESULT: ${{ needs.execute.result }}
           LINK_RESULT: ${{ needs.lint.outputs.link_result }}
@@ -583,6 +584,16 @@ jobs:
           SUMMARY_FILE: ${{ runner.temp }}/notebook-qa-summary.md
           SUMMARISE_ALL_CHECKS: ${{ inputs.summarise_all_checks }}
         run: |
+          # Deep-link each check to its owning job's logs; fall back to the run page
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
+          lint_url=$(gh api "$jobs_api" --paginate \
+            --jq '.jobs[] | select(.name | endswith("lint")) | .html_url' 2>/dev/null | head -n1 || true)
+          execute_url=$(gh api "$jobs_api" --paginate \
+            --jq '.jobs[] | select(.name | endswith("execute")) | .html_url' 2>/dev/null | head -n1 || true)
+          export LOGS_URL="$run_url"
+          export LINT_LOGS_URL="${lint_url:-$run_url}"
+          export EXECUTE_LOGS_URL="${execute_url:-$run_url}"
           python3 .tmp/${{ github.run_id }}-qa-tools/process-notebooks/checkers/write_review_summary.py
           cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
 

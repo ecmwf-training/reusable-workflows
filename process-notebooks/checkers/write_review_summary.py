@@ -7,9 +7,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Link to the GitHub Actions run logs; set in main() and used for the fallback error cell.
-_logs_url = ""
-
 
 def format_status(result: str) -> str:
     mapping = {
@@ -63,8 +60,8 @@ def clean_error(text: str) -> str:
     return text.replace("\n", "<br>")
 
 
-def resolve_logs_url(env) -> str:
-    """Resolve the URL to the GitHub Actions run logs."""
+def resolve_run_url(env) -> str:
+    """Resolve the fallback URL to the GitHub Actions run page."""
     url = env.get("LOGS_URL", "").strip()
     if url:
         return url
@@ -76,17 +73,17 @@ def resolve_logs_url(env) -> str:
     return ""
 
 
-def result_cell(status: str, error: str) -> str:
+def result_cell(status: str, error: str, logs_url: str = "") -> str:
     """Render the Automated Result cell with a bold status and optional error detail."""
     cell = f"**{status}**"
     if status != "Fail":
         return cell
     if error:
         cell += "<br>" + error
-    elif _logs_url:
+    elif logs_url:
         cell += (
             "<br>Unable to gather error message please see full github logs: "
-            f"[GitHub Actions logs]({_logs_url})"
+            f"[GitHub Actions logs]({logs_url})"
         )
     else:
         cell += "<br>Unable to gather error message please see full github logs."
@@ -101,17 +98,20 @@ def append_row(
     status: str,
     error: str = "",
     comment: str = "",
+    logs_url: str = "",
 ) -> None:
     """Record a table row, filtering to failures unless include_all is set."""
     if include_all or status == "Fail":
-        cells = [criterion, ref, result_cell(status, error), comment]
+        cells = [criterion, ref, result_cell(status, error, logs_url), comment]
         rows.append("| " + " | ".join(cells) + " |")
 
 
 def main() -> int:
-    global _logs_url
     env = os.environ
-    _logs_url = resolve_logs_url(env)
+
+    run_url = resolve_run_url(env)
+    lint_logs_url = env.get("LINT_LOGS_URL", "").strip() or run_url
+    execute_logs_url = env.get("EXECUTE_LOGS_URL", "").strip() or run_url
 
     lint_job_result = env.get("LINT_JOB_RESULT", "")
     execute_job_result = env.get("EXECUTE_JOB_RESULT", "")
@@ -170,6 +170,7 @@ def main() -> int:
         "1.2.3",
         links_status,
         links_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -178,6 +179,7 @@ def main() -> int:
         "1.2.4",
         license_status,
         license_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -186,6 +188,7 @@ def main() -> int:
         "1.2.6",
         metadata_status,
         metadata_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -202,6 +205,7 @@ def main() -> int:
         "1.2.8",
         data_source_status,
         data_source_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -210,6 +214,7 @@ def main() -> int:
         "2.2.1",
         execute_status,
         execute_error,
+        logs_url=execute_logs_url,
     )
     append_row(
         rows,
@@ -218,6 +223,7 @@ def main() -> int:
         "2.2.3",
         code_style_status,
         code_style_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -227,6 +233,7 @@ def main() -> int:
         "2.2.4",
         execute_status,
         execute_error,
+        logs_url=execute_logs_url,
     )
     append_row(
         rows,
@@ -243,6 +250,7 @@ def main() -> int:
         "2.3.1",
         execute_status,
         execute_error,
+        logs_url=execute_logs_url,
     )
     append_row(
         rows,
@@ -267,6 +275,7 @@ def main() -> int:
         "2.3.1",
         tests_status,
         tests_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -275,6 +284,7 @@ def main() -> int:
         "2.3.2",
         tests_status,
         tests_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -283,6 +293,7 @@ def main() -> int:
         "3.1.3",
         accessibility_status,
         accessibility_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -291,6 +302,7 @@ def main() -> int:
         "3.3.2",
         figure_status,
         figure_error,
+        logs_url=lint_logs_url,
     )
     append_row(
         rows,
@@ -315,6 +327,7 @@ def main() -> int:
         "4.2.3",
         changelog_status,
         changelog_error,
+        logs_url=lint_logs_url,
     )
     append_row(rows, include_all, "In expert reviews only", "N/A", "N/A", comment="N/A")
 
