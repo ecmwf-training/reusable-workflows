@@ -291,7 +291,7 @@ jobs:
       - name: (3.1.3) Check accessibility
         id: accessibility_checker
         if: (success() || failure()) && steps.config.outputs.skip_accessibility != 'true' && steps.config.outputs.notebooks_accessibility != ''
-        uses: berkeley-dsep-infra/jupyterlab-a11y-checker@a5d17b99db5dfcc1500b69727a2726179eb82903
+        uses: berkeley-dsep-infra/jupyterlab-a11y-checker@dd9085a22a9dc97388af6dc8b466bf165aa81ae6
         with:
           files: ${{ steps.config.outputs.notebooks_accessibility }}
 
