@@ -96,6 +96,7 @@ All inputs are optional.
 | `notebooks` | `""` | Space-separated list of notebook paths to check. Empty checks all `*.ipynb` (or changed notebooks on PRs). |
 | `execution_runner` | `ubuntu-latest` | Runner for the notebook execution job. Supports self-hosted runners. |
 | `execution_timeout` | `60` | Timeout in minutes for the notebook execution job. |
+| `python_version` | `"3.13"` | Python version for the notebook execution environment. A Python pin in the consuming repository's `environment.yml` takes precedence. |
 | `qa_tools_repo` | `ecmwf-training/reusable-workflows` | Repository containing the QA checker tools. |
 | `qa_tools_ref` | `""` | Git ref (branch, tag, or SHA) of the QA tools repository to check out. When empty, defaults to the reusable workflow's own commit so the checker tools always match the workflow version. |
 | `pr_comment_summary` | `true` | Post/update the automated review summary as a pull request comment. |
@@ -175,7 +176,7 @@ Valid check IDs: `linter`, `formatter`, `pynblint`, `links`, `figures`, `metadat
 
 ### Notebook execution environment
 
-The notebook execution check builds a Conda environment from an `environment.yml` file in the consuming repository root. Ensure this file exists and declares all dependencies required to run the notebooks. Execution tooling (`ploomber-engine`, `psutil`, `matplotlib`) is installed automatically on top of this environment.
+The notebook execution check builds a Conda environment from an `environment.yml` file in the consuming repository root. Ensure this file exists and declares all dependencies required to run the notebooks. The environment is first created with the Python version from the `python_version` input (default `3.13`), and the dependencies in `environment.yml` are then installed into it. To use a different Python, either set `python_version` or pin `python` in `environment.yml`. Execution tooling (`ploomber-engine`, `psutil`, `matplotlib`) is installed automatically on top of this environment.
 
 
 ### How to configure access to cdsapi for notebook execution check

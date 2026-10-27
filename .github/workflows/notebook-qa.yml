@@ -18,6 +18,11 @@ on:
         required: false
         type: number
         default: 60
+      python_version:
+        description: "Python version for notebook execution, used unless the consuming repository's environment.yml pins one"
+        required: false
+        type: string
+        default: "3.13"
       qa_tools_repo:
         description: "Repository containing QA tools"
         required: false
@@ -392,15 +397,23 @@ jobs:
         with:
           miniforge-version: latest
           activate-environment: notebook-qa
-          environment-file: environment.yml
+          # Create the environment with a known Python first, so an unpinned environment.yml
+          # does not pick up a Python release that compiled dependencies have no wheels for yet
+          python-version: ${{ inputs.python_version }}
           use-mamba: true
 
       - name: Ensure standard (GIL-enabled) Python build
         if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != ''
         run: |
-          # Replace any free-threaded interpreter with the regular GIL build so cftime loads without warnings
+          # Pin the regular GIL build before installing dependencies, so pip resolves matching wheels
+          # and cftime loads without warnings
           pyver=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
           mamba install -n notebook-qa -y "python_abi=${pyver}=*_cp${pyver//./}"
+
+      - name: Install notebook dependencies
+        if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != ''
+        # A Python pin in environment.yml takes precedence over the python_version input
+        run: mamba env update -n notebook-qa -f environment.yml
 
       - name: Install execution tools
         if: steps.config.outputs.skip_execute != 'true' && steps.config.outputs.notebooks_execute != ''
