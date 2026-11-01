@@ -9,7 +9,7 @@ dependencies = [
     "pynblint==0.1.6",
     "pyyaml==6.0.3",
     "requests==2.34.2",
-    "ruff==0.16.10",
+    "ruff==0.17.2",
 ]
 
 [tool.ruff]
